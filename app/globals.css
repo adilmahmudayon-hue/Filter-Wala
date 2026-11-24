@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+:root { color-scheme: light; }
+html, body { background: #ffffff; color: #0b1220; }
+body { font-family: Arial, Helvetica, sans-serif; }
+
+.card { background: #fff; border: 1px solid #bae6fd; border-radius: 16px; padding: 16px; box-shadow: 0 1px 4px rgba(2, 132, 199, .15); }
+.panel { background: #ecfeff; border: 1px solid #a5f3fc; border-radius: 12px; padding: 12px; }
+
+.input { width: 100%; background: #fff; color: #0b1220; border: 1.5px solid #7dd3fc; border-radius: 10px; padding: 10px 12px; }
+.input:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px #bfdbfe; }
+
+.btn { background: #2563eb; color: #fff; font-weight: 600; border-radius: 12px; padding: 10px 16px; border: 1.5px solid #2563eb; cursor: pointer; }
+.btn:hover { background: #1d4ed8; }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn-outline { background: #fff; color: #1d4ed8; font-weight: 600; border-radius: 12px; padding: 10px 16px; border: 1.5px solid #2563eb; cursor: pointer; }
+.btn-outline:hover { background: #eff6ff; }
+.btn-outline.on { background: #2563eb; color: #fff; }
+.btn-round { width: 40px; height: 40px; border-radius: 999px; background: #fff; color: #1d4ed8; border: 1.5px solid #2563eb; font-size: 20px; cursor: pointer; }
+
+.chip { display: inline-block; border-radius: 999px; padding: 4px 12px; font-size: 12px; font-weight: 600; }
+.chip-blue { background: #dbeafe; color: #1e3a8a; }
+.chip-aqua { background: #cffafe; color: #155e75; }
+.chip-dark { background: #0b1220; color: #fff; }
+.chip-gray { background: #f1f5f9; color: #0b1220; }
+
+.muted { color: #475569; }

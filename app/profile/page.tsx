@@ -2,10 +2,13 @@
 import { useState } from "react";
 import Guard from "@/components/Guard";
 import { useStore } from "@/components/Store";
-import { floorLabel } from "@/lib/data";
+import { useLang } from "@/components/Lang";
+import { Back, Field, FloorSelect } from "@/components/UI";
+import { ROLE_INFO, dashboardPath } from "@/lib/data";
 
 function Inner() {
   const { user, companies, updateUser, changePassword } = useStore();
+  const { t, bn, err } = useLang();
   const u = user!;
   const [f, setF] = useState({
     name: u.name, phone: u.phone, email: u.email, studentId: u.studentId ?? "",
@@ -21,58 +24,51 @@ function Inner() {
 
   const save = () => {
     updateUser(u.id, u.role === "student" ? f : { name: f.name, phone: f.phone, email: f.email });
-    setSaved("Profile saved ✔");
+    setSaved(t("Profile saved ✔", "প্রোফাইল সংরক্ষিত ✔"));
   };
 
   const pw = () => {
-    if (newPw !== conf) return setPwMsg({ ok: false, text: "New passwords don't match." });
+    if (newPw !== conf) return setPwMsg({ ok: false, text: t("New passwords don't match.", "নতুন পাসওয়ার্ড দুটি মিলছে না।") });
     const e = changePassword(u.id, oldPw, newPw);
-    if (e) return setPwMsg({ ok: false, text: e });
+    if (e) return setPwMsg({ ok: false, text: err(e) });
     setOldPw(""); setNewPw(""); setConf("");
-    setPwMsg({ ok: true, text: "Password changed ✔" });
+    setPwMsg({ ok: true, text: t("Password changed ✔", "পাসওয়ার্ড পরিবর্তন হয়েছে ✔") });
   };
-
-  const text = (label: string, k: keyof typeof f, type = "text") => (
-    <label className="block text-sm font-medium">{label}
-      <input className="input mt-1" type={type} value={String(f[k])} onChange={(e) => set(k, e.target.value)} />
-    </label>
-  );
 
   return (
     <div className="space-y-6">
+      <Back href={dashboardPath(u.role)} />
       <section className="card space-y-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">My Profile</h1>
-          <span className="chip chip-dark">{u.role.toUpperCase()}</span>
+          <h1 className="text-xl font-bold">{t("My Profile", "আমার প্রোফাইল")}</h1>
+          <span className="chip chip-dark">{bn ? ROLE_INFO[u.role].bn : ROLE_INFO[u.role].en}</span>
         </div>
-        {company && <p className="muted text-sm">Company: <b style={{ color: "#0b1220" }}>{company.name}</b></p>}
-        {text("Full name", "name")}
-        {text("Phone number", "phone", "tel")}
-        {text("Email", "email", "email")}
+        {company && <p className="muted text-sm">{t("Company", "কোম্পানি")}: <b style={{ color: "#0b1220" }}>{company.name}</b></p>}
+        <Field label={t("Full name", "পূর্ণ নাম")} value={f.name} onChange={(v) => set("name", v)} />
+        <Field label={t("Phone number", "ফোন নম্বর")} type="tel" value={f.phone} onChange={(v) => set("phone", v)} />
+        <Field label={t("Email", "ইমেইল")} type="email" value={f.email} onChange={(v) => set("email", v)} />
         {u.role === "student" && (
           <>
-            {text("Student ID", "studentId")}
-            {text("Building name / House no.", "building")}
-            {text("Street / Area", "area")}
-            <label className="block text-sm font-medium">Floor
-              <select className="input mt-1" value={f.floor} onChange={(e) => set("floor", +e.target.value)}>
-                {Array.from({ length: 11 }, (_, i) => <option key={i} value={i}>{floorLabel(i)}</option>)}
-              </select>
+            <Field label={t("Student ID", "স্টুডেন্ট আইডি")} value={f.studentId} onChange={(v) => set("studentId", v)} />
+            <Field label={t("Building name / House no.", "বিল্ডিংয়ের নাম / বাড়ি নম্বর")} value={f.building} onChange={(v) => set("building", v)} />
+            <Field label={t("Street / Area", "রাস্তা / এলাকা")} value={f.area} onChange={(v) => set("area", v)} />
+            <label className="block text-sm font-medium">{t("Floor", "তলা")}
+              <div className="mt-1"><FloorSelect value={f.floor} onChange={(v) => set("floor", v)} /></div>
             </label>
-            <p className="muted text-xs">Your floor decides your delivery charge. Update it if you move.</p>
+            <p className="muted text-xs">{t("Your floor decides your delivery charge. Update it if you move.", "আপনার তলা অনুযায়ী ডেলিভারি চার্জ হয়। স্থান বদলালে হালনাগাদ করুন।")}</p>
           </>
         )}
         {saved && <p className="text-sm font-medium" style={{ color: "#155e75" }}>{saved}</p>}
-        <button className="btn w-full" onClick={save}>Save changes</button>
+        <button className="btn w-full" onClick={save}>{t("Save changes", "পরিবর্তন সংরক্ষণ করুন")}</button>
       </section>
 
       <section className="card space-y-4">
-        <h2 className="text-lg font-bold">Change password</h2>
-        <input className="input" type="password" placeholder="Current password" value={oldPw} onChange={(e) => setOldPw(e.target.value)} />
-        <input className="input" type="password" placeholder="New password (min 6 characters)" value={newPw} onChange={(e) => setNewPw(e.target.value)} />
-        <input className="input" type="password" placeholder="Confirm new password" value={conf} onChange={(e) => setConf(e.target.value)} />
+        <h2 className="text-lg font-bold">{t("Change password", "পাসওয়ার্ড পরিবর্তন")}</h2>
+        <input className="input" type="password" placeholder={t("Current password", "বর্তমান পাসওয়ার্ড")} value={oldPw} onChange={(e) => setOldPw(e.target.value)} />
+        <input className="input" type="password" placeholder={t("New password (min 6 characters)", "নতুন পাসওয়ার্ড (কমপক্ষে ৬ অক্ষর)")} value={newPw} onChange={(e) => setNewPw(e.target.value)} />
+        <input className="input" type="password" placeholder={t("Confirm new password", "নতুন পাসওয়ার্ড নিশ্চিত করুন")} value={conf} onChange={(e) => setConf(e.target.value)} />
         {pwMsg && <p className="text-sm font-medium" style={{ color: pwMsg.ok ? "#155e75" : "#b91c1c" }}>{pwMsg.text}</p>}
-        <button className="btn w-full" onClick={pw}>Update password</button>
+        <button className="btn w-full" onClick={pw}>{t("Update password", "পাসওয়ার্ড আপডেট করুন")}</button>
       </section>
     </div>
   );

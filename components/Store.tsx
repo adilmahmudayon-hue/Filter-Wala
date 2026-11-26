@@ -1,7 +1,7 @@
 "use client";
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import {
-  Order, Company, User, Status, DEFAULT_BANDS, INITIAL_COMPANIES, INITIAL_USERS,
+  Order, Company, User, Status, Role, SlotKey, DEFAULT_BANDS, INITIAL_COMPANIES, INITIAL_USERS,
 } from "@/lib/data";
 
 type State = { orders: Order[]; companies: Company[]; users: User[]; sessionId: string | null };
@@ -12,24 +12,26 @@ type Store = {
   orders: Order[];
   companies: Company[];
   users: User[];
-  login: (email: string, password: string) => string | null;
+  login: (email: string, password: string, role: Role) => string | null;
   logout: () => void;
-  register: (u: Omit<User, "id" | "role" | "suspended">) => string | null;
-  addUser: (u: Omit<User, "id">) => string | null;
+  register: (u: Omit<User, "id" | "role">) => string | null; // student, logs in
+  signup: (u: Omit<User, "id">) => string | null; // any role, no login
   updateUser: (id: string, p: Partial<User>) => void;
+  removeUser: (id: string) => void;
   changePassword: (id: string, oldPw: string, newPw: string) => string | null;
-  addCompany: (name: string) => void;
+  addCompany: (name: string, phone: string, areas: string[]) => void;
   updateCompany: (id: string, p: Partial<Company>) => void;
   addOrder: (o: Omit<Order, "id" | "status" | "createdAt">) => void;
   sendEta: (id: string, eta: string) => void;
   markReceived: (id: string) => void;
-  complete: (id: string) => void;
+  reschedule: (id: string, slot: SlotKey) => void;
+  complete: (id: string, byUserId: string) => void;
 };
 
 const Ctx = createContext<Store | null>(null);
 export const useStore = () => useContext(Ctx)!;
 
-const KEY = "fw-demo-v2";
+const KEY = "fw-demo-v3";
 const now = () => new Date().toISOString();
 
 const initial: State = {
@@ -39,13 +41,20 @@ const initial: State = {
   orders: [
     {
       id: "FW-1001", companyId: "c1", customerId: "x1", customer: "Tanvir Ahmed", phone: "01755555555",
-      building: "Hostel B, Room 4B", floor: 4, item: "20L Jar Refill", qty: 2, total: 170,
-      slot: "ASAP", pay: "COD", status: "Pending", createdAt: now(),
+      building: "Hostel B, Room 4B", floor: 4, item: "newJar", qty: 1, total: 400,
+      slot: "asap", pay: "COD", status: "Pending", createdAt: now(),
     },
     {
       id: "FW-1002", companyId: "c1", customerId: "x2", customer: "Nusrat Jahan", phone: "01866666666",
-      building: "Mess 7, Road 3", floor: 1, item: "New Jar + Water (with deposit)", qty: 1, total: 395,
-      slot: "Evening 6 PM – 9 PM", pay: "bKash", trxId: "9K3L2M1X", status: "Pending", createdAt: now(),
+      building: "Mess 7, Road 3", floor: 1, item: "filter", qty: 1, total: 1845,
+      slot: "evening", pay: "bKash", trxId: "9K3L2M1X", senderPhone: "01866666666",
+      status: "Pending", createdAt: now(),
+    },
+    {
+      id: "FW-1003", companyId: "c1", customerId: "u-s1", customer: "Rafiq Hasan", phone: "01700000000",
+      building: "Mess 12, Road 5, Mirpur", floor: 3, item: "newJar", qty: 1, total: 400,
+      slot: "morning", pay: "COD", status: "Completed", completedBy: "u-staff1",
+      completedAt: now(), createdAt: now(),
     },
   ],
 };
@@ -70,49 +79,51 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const user = s.users.find((u) => u.id === s.sessionId) ?? null;
   const patchOrder = (id: string, p: Partial<Order>) =>
     setS((x) => ({ ...x, orders: x.orders.map((o) => (o.id === id ? { ...o, ...p } : o)) }));
-
   const emailTaken = (email: string) =>
     s.users.some((u) => u.email.toLowerCase() === email.trim().toLowerCase());
 
   const value: Store = {
     ready, user, orders: s.orders, companies: s.companies, users: s.users,
 
-    login: (email, password) => {
+    login: (email, password, role) => {
       const u = s.users.find((x) => x.email.toLowerCase() === email.trim().toLowerCase() && x.password === password);
-      if (!u) return "Wrong email or password.";
-      if (u.suspended) return "This account is suspended. Contact support.";
+      if (!u) return "login_wrong";
+      if (u.role !== role) return "role_mismatch";
+      if (u.pending) return "pending";
+      if (u.suspended) return "suspended";
       setS((x) => ({ ...x, sessionId: u.id }));
       return null;
     },
     logout: () => setS((x) => ({ ...x, sessionId: null })),
 
     register: (u) => {
-      if (emailTaken(u.email)) return "That email is already registered.";
+      if (emailTaken(u.email)) return "email_taken";
       const id = `u-${Date.now()}`;
       setS((x) => ({ ...x, users: [...x.users, { ...u, id, role: "student" }], sessionId: id }));
       return null;
     },
-    addUser: (u) => {
-      if (emailTaken(u.email)) return "That email is already registered.";
+    signup: (u) => {
+      if (emailTaken(u.email)) return "email_taken";
       setS((x) => ({ ...x, users: [...x.users, { ...u, id: `u-${Date.now()}` }] }));
       return null;
     },
     updateUser: (id, p) =>
       setS((x) => ({ ...x, users: x.users.map((u) => (u.id === id ? { ...u, ...p } : u)) })),
+    removeUser: (id) => setS((x) => ({ ...x, users: x.users.filter((u) => u.id !== id) })),
     changePassword: (id, oldPw, newPw) => {
       const u = s.users.find((x) => x.id === id);
-      if (!u || u.password !== oldPw) return "Current password is incorrect.";
-      if (newPw.length < 6) return "New password must be at least 6 characters.";
+      if (!u || u.password !== oldPw) return "pw_wrong";
+      if (newPw.length < 6) return "pw_short";
       setS((x) => ({ ...x, users: x.users.map((y) => (y.id === id ? { ...y, password: newPw } : y)) }));
       return null;
     },
 
-    addCompany: (name) =>
+    addCompany: (name, phone, areas) =>
       setS((x) => ({
         ...x,
         companies: [...x.companies, {
-          id: `c${Date.now()}`, name, phone: "", bkash: "", nagad: "", areas: [], active: true,
-          prices: { refill: 35, newJar: 350, filter: 1800 }, bands: DEFAULT_BANDS,
+          id: `c${Date.now()}`, name, phone, bkash: "", nagad: "", areas, active: true,
+          prices: { newJar: 350, filterJar: 2150, filter: 1800 }, bands: DEFAULT_BANDS,
         }],
       })),
     updateCompany: (id, p) =>
@@ -125,7 +136,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       })),
     sendEta: (id, eta) => patchOrder(id, { eta, status: "Scheduled" }),
     markReceived: (id) => patchOrder(id, { status: "Received" }),
-    complete: (id) => patchOrder(id, { status: "Completed" }),
+    reschedule: (id, slot) => patchOrder(id, { slot, rescheduled: true }),
+    complete: (id, byUserId) => patchOrder(id, { status: "Completed", completedBy: byUserId, completedAt: now() }),
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

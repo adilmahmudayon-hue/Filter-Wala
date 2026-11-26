@@ -17,12 +17,40 @@ export type User = {
   companyId?: string; suspended?: boolean; pending?: boolean;
 };
 
-export type Order = {
-  id: string; companyId: string; customerId: string; customer: string; phone: string;
-  building: string; floor: number; item: ItemKey; qty: number; total: number;
-  slot: SlotKey; pay: PayMethod; trxId?: string; senderPhone?: string; screenshot?: string;
-  status: Status; eta?: string; rescheduled?: boolean;
-  completedBy?: string; completedAt?: string; createdAt: string;
+ export type Order = {
+  id: string;
+  dbId?: string;
+  code?: string;
+
+  companyId: string;
+  customerId: string;
+  customer: string;
+  phone: string;
+  building: string;
+  floor: number;
+
+  item: ItemKey;
+  qty: number;
+  total: number;
+
+  unitPrice?: number;
+  floorFee?: number;
+
+  slot: SlotKey;
+  pay: PayMethod;
+
+  trxId?: string;
+  senderPhone?: string;
+  screenshot?: string;
+  screenshotPath?: string;
+
+  status: Status;
+  eta?: string;
+  rescheduled?: boolean;
+
+  completedBy?: string;
+  completedAt?: string;
+  createdAt: string;
 };
 
 export const ADMIN_CODE = "FW-ADMIN-2026"; // demo only

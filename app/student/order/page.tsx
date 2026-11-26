@@ -1,18 +1,32 @@
 "use client";
+
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+
 import Guard from "@/components/Guard";
 import { useStore } from "@/components/Store";
 import { useLang } from "@/components/Lang";
 import { Back, Field } from "@/components/UI";
+
 import { compressImage } from "@/lib/image";
-import { ITEMS, SLOTS, ItemKey, PayMethod, SlotKey, floorFee, floorLabel } from "@/lib/data";
+import { createClient } from "@/lib/supabase/client";
+
+import {
+  ITEMS,
+  SLOTS,
+  ItemKey,
+  PayMethod,
+  SlotKey,
+  floorFee,
+  floorLabel,
+} from "@/lib/data";
 
 function Inner() {
   const { user, companies, addOrder } = useStore();
   const { t, bn } = useLang();
   const router = useRouter();
+
   const u = user!;
   const floor = u.floor ?? 0;
   const active = companies.filter((c) => c.active);
@@ -26,86 +40,274 @@ function Inner() {
   const [sender, setSender] = useState("");
   const [shot, setShot] = useState("");
   const [msg, setMsg] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const company = companies.find((c) => c.id === companyId);
-  if (!company) return <p className="muted">{t("No vendors available right now.", "এখন কোনো ভেন্ডর পাওয়া যাচ্ছে না।")}</p>;
+
+  if (!company) {
+    return (
+      <p className="muted">
+        {t(
+          "No vendors available right now.",
+          "এখন কোনো ভেন্ডর পাওয়া যাচ্ছে না।"
+        )}
+      </p>
+    );
+  }
 
   const fee = floorFee(company.bands, floor);
-  const total = (company.prices[itemKey] + fee) * qty;
+
+  // Floor charge is charged once per order, not once per item.
+  const total = company.prices[itemKey] * qty + fee;
+
   const number = pay === "bKash" ? company.bkash : company.nagad;
 
-  const pickShot = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const pickShot = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    try { setShot(await compressImage(file)); setMsg(""); }
-    catch { setMsg(t("Could not read that image.", "ছবিটি পড়া যায়নি।")); }
-  };
 
-  const submit = () => {
-    if (pay !== "COD" && (!sender.trim() || !shot)) {
-      return setMsg(t("Please add the sender number and a payment screenshot.", "প্রেরকের নম্বর ও পেমেন্টের স্ক্রিনশট দিন।"));
+    if (!file.type.startsWith("image/")) {
+      setMsg(t("Please select an image.", "একটি ছবি নির্বাচন করুন।"));
+      return;
     }
-    addOrder({
-      companyId, customerId: u.id, customer: u.name, phone: u.phone,
-      building: `${u.building}, ${u.area}`, floor, item: itemKey, qty, total, slot, pay,
-      trxId: pay === "COD" ? undefined : trx.trim() || undefined,
-      senderPhone: pay === "COD" ? undefined : sender.trim(),
-      screenshot: pay === "COD" ? undefined : shot,
-    });
-    router.push("/student/orders");
+
+    try {
+      setShot(await compressImage(file));
+      setMsg("");
+    } catch {
+      setMsg(
+        t(
+          "Could not read that image.",
+          "ছবিটি পড়া যায়নি।"
+        )
+      );
+    }
   };
 
-  const payBtn = (p: PayMethod, label: string, ok: boolean) => (
+  const submit = async () => {
+    if (loading) return;
+
+    if (pay !== "COD" && (!sender.trim() || !shot)) {
+      setMsg(
+        t(
+          "Please add the sender number and a payment screenshot.",
+          "প্রেরকের নম্বর ও পেমেন্টের স্ক্রিনশট দিন।"
+        )
+      );
+      return;
+    }
+
+    setLoading(true);
+    setMsg("");
+
+    let screenshotPath: string | undefined;
+
+    try {
+      // Upload payment screenshot to the private Supabase bucket.
+      if (pay !== "COD" && shot) {
+        const supabase = createClient();
+
+        const response = await fetch(shot);
+        const blob = await response.blob();
+
+        const extension =
+          blob.type === "image/png"
+            ? "png"
+            : blob.type === "image/webp"
+              ? "webp"
+              : "jpg";
+
+        screenshotPath = `${u.id}/${crypto.randomUUID()}.${extension}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("payment-screenshots")
+          .upload(screenshotPath, blob, {
+            contentType: blob.type,
+            upsert: false,
+          });
+
+        if (uploadError) {
+          throw new Error(uploadError.message);
+        }
+      }
+
+      // The backend calculates the actual price and floor fee.
+   await addOrder({
+  companyId,
+  customerId: u.id,
+  customer: u.name,
+  phone: u.phone,
+  building: `${u.building ?? ""}, ${u.area ?? ""}`,
+  floor,
+  item: itemKey,
+  qty,
+  total,
+  slot,
+  pay,
+  trxId: pay === "COD" ? undefined : trx.trim() || undefined,
+  senderPhone: pay === "COD" ? undefined : sender.trim(),
+  screenshotPath,
+});
+
+router.push("/student/orders");
+
+    } catch (error) {
+      console.error("Order submission failed:", error);
+
+      setMsg(
+        error instanceof Error
+          ? error.message
+          : t(
+              "Could not place your order. Please try again.",
+              "অর্ডার করা যায়নি। আবার চেষ্টা করুন।"
+            )
+      );
+
+      setLoading(false);
+    }
+  };
+
+  const payBtn = (
+    p: PayMethod,
+    label: string,
+    ok: boolean
+  ) => (
     <div key={p}>
-      <button disabled={!ok} onClick={() => setPay(p)} className={`btn-outline w-full ${pay === p ? "on" : ""}`}>{label}</button>
-      {!ok && <div className="muted mt-1 text-center text-[11px]">{t("Not available", "বন্ধ আছে")}</div>}
+      <button
+        disabled={!ok || loading}
+        onClick={() => setPay(p)}
+        className={`btn-outline w-full ${pay === p ? "on" : ""}`}
+      >
+        {label}
+      </button>
+
+      {!ok && (
+        <div className="muted mt-1 text-center text-[11px]">
+          {t("Not available", "বন্ধ আছে")}
+        </div>
+      )}
     </div>
   );
 
   return (
     <div className="space-y-4">
       <Back href="/student" />
+
       <section className="card space-y-4">
-        <h1 className="text-xl font-bold">🛒 {t("Place an order", "অর্ডার করুন")}</h1>
+        <h1 className="text-xl font-bold">
+          🛒 {t("Place an order", "অর্ডার করুন")}
+        </h1>
+
         <div className="panel text-sm">
-          <b>{u.name}</b> · {u.building}, {u.area} · <b>{floorLabel(floor, bn)}</b>
-          <div><Link href="/profile" style={{ color: "#1d4ed8", fontWeight: 600 }}>{t("Change address / floor", "ঠিকানা / তলা পরিবর্তন")}</Link></div>
+          <b>{u.name}</b> · {u.building}, {u.area} ·{" "}
+          <b>{floorLabel(floor, bn)}</b>
+
+          <div>
+            <Link
+              href="/profile"
+              style={{ color: "#1d4ed8", fontWeight: 600 }}
+            >
+              {t(
+                "Change address / floor",
+                "ঠিকানা / তলা পরিবর্তন"
+              )}
+            </Link>
+          </div>
         </div>
 
-        <label className="block text-sm font-medium">{t("Vendor", "ভেন্ডর")}
-          <select className="input mt-1" value={companyId}
-            onChange={(e) => { setCompanyId(e.target.value); setPay("COD"); }}>
-            {active.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        <label className="block text-sm font-medium">
+          {t("Vendor", "ভেন্ডর")}
+
+          <select
+            className="input mt-1"
+            value={companyId}
+            onChange={(e) => {
+              setCompanyId(e.target.value);
+              setPay("COD");
+            }}
+          >
+            {active.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
           </select>
         </label>
 
         <div>
-          <div className="mb-1 text-sm font-medium">{t("Item", "আইটেম")}</div>
+          <div className="mb-1 text-sm font-medium">
+            {t("Item", "আইটেম")}
+          </div>
+
           <div className="space-y-2">
             {ITEMS.map((i) => (
-              <button key={i.key} onClick={() => setItemKey(i.key)} className={`opt ${itemKey === i.key ? "on" : ""}`}>
-                <span>{itemKey === i.key ? "◉" : "○"} {bn ? i.bn : i.en}</span>
-                <span style={{ color: "#1d4ed8" }}>৳{company.prices[i.key]}</span>
+              <button
+                key={i.key}
+                onClick={() => setItemKey(i.key)}
+                className={`opt ${itemKey === i.key ? "on" : ""}`}
+              >
+                <span>
+                  {itemKey === i.key ? "◉" : "○"}{" "}
+                  {bn ? i.bn : i.en}
+                </span>
+
+                <span style={{ color: "#1d4ed8" }}>
+                  ৳{company.prices[i.key]}
+                </span>
               </button>
             ))}
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          <span className="text-sm font-medium">{t("Quantity", "পরিমাণ")}</span>
-          <button className="btn-round" onClick={() => setQty(Math.max(1, qty - 1))}>−</button>
-          <span className="w-6 text-center font-semibold">{qty}</span>
-          <button className="btn-round" onClick={() => setQty(qty + 1)}>+</button>
+          <span className="text-sm font-medium">
+            {t("Quantity", "পরিমাণ")}
+          </span>
+
+          <button
+            className="btn-round"
+            onClick={() => setQty(Math.max(1, qty - 1))}
+          >
+            −
+          </button>
+
+          <span className="w-6 text-center font-semibold">
+            {qty}
+          </span>
+
+          <button
+            className="btn-round"
+            onClick={() => setQty(Math.min(50, qty + 1))}
+          >
+            +
+          </button>
         </div>
 
-        <label className="block text-sm font-medium">{t("Preferred time", "পছন্দের সময়")}
-          <select className="input mt-1" value={slot} onChange={(e) => setSlot(e.target.value as SlotKey)}>
-            {SLOTS.map((s) => <option key={s.key} value={s.key}>{bn ? s.bn : s.en}</option>)}
+        <label className="block text-sm font-medium">
+          {t("Preferred time", "পছন্দের সময়")}
+
+          <select
+            className="input mt-1"
+            value={slot}
+            onChange={(e) =>
+              setSlot(e.target.value as SlotKey)
+            }
+          >
+            {SLOTS.map((s) => (
+              <option key={s.key} value={s.key}>
+                {bn ? s.bn : s.en}
+              </option>
+            ))}
           </select>
         </label>
 
         <div>
-          <div className="mb-1 text-sm font-medium">{t("Payment", "পেমেন্ট")}</div>
+          <div className="mb-1 text-sm font-medium">
+            {t("Payment", "পেমেন্ট")}
+          </div>
+
           <div className="grid grid-cols-3 gap-2">
             {payBtn("COD", t("Cash", "ক্যাশ"), true)}
             {payBtn("bKash", "bKash", !!company.bkash)}
@@ -116,32 +318,108 @@ function Inner() {
         {pay !== "COD" && (
           <div className="panel space-y-3">
             <div className="flex items-center justify-between gap-2 text-sm">
-              <span>{t(`Send ৳${total} to ${pay}:`, `${pay}-এ ৳${total} পাঠান:`)} <b>{number}</b></span>
-              <button className="btn-outline" style={{ padding: "4px 10px", fontSize: 12 }}
-                onClick={() => navigator.clipboard?.writeText(number)}>{t("Copy", "কপি")}</button>
+              <span>
+                {t(
+                  `Send ৳${total} to ${pay}:`,
+                  `${pay}-এ ৳${total} পাঠান:`
+                )}{" "}
+                <b>{number}</b>
+              </span>
+
+              <button
+                className="btn-outline"
+                style={{ padding: "4px 10px", fontSize: 12 }}
+                onClick={() =>
+                  navigator.clipboard?.writeText(number)
+                }
+              >
+                {t("Copy", "কপি")}
+              </button>
             </div>
-            <Field label={t("Your sender number", "আপনার প্রেরক নম্বর")} value={sender} onChange={setSender} />
-            <Field label={t("Transaction ID (optional)", "ট্রানজেকশন আইডি (ঐচ্ছিক)")} value={trx} onChange={setTrx} />
+
+            <Field
+              label={t("Your sender number", "আপনার প্রেরক নম্বর")}
+              value={sender}
+              onChange={setSender}
+            />
+
+            <Field
+              label={t(
+                "Transaction ID (optional)",
+                "ট্রানজেকশন আইডি (ঐচ্ছিক)"
+              )}
+              value={trx}
+              onChange={setTrx}
+            />
+
             <div>
-              <div className="mb-1 text-sm font-medium">{t("Payment screenshot", "পেমেন্টের স্ক্রিনশট")}</div>
-              <input type="file" accept="image/*" onChange={pickShot} className="text-sm" />
-              {shot && <img src={shot} alt="screenshot" style={{ marginTop: 8, width: 110, borderRadius: 10, border: "1.5px solid #7dd3fc" }} />}
+              <div className="mb-1 text-sm font-medium">
+                {t("Payment screenshot", "পেমেন্টের স্ক্রিনশট")}
+              </div>
+
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={pickShot}
+                className="text-sm"
+              />
+
+              {shot && (
+                <img
+                  src={shot}
+                  alt="Payment screenshot preview"
+                  style={{
+                    marginTop: 8,
+                    width: 110,
+                    borderRadius: 10,
+                    border: "1.5px solid #7dd3fc",
+                  }}
+                />
+              )}
             </div>
           </div>
         )}
 
         <div className="panel text-sm">
-          (৳{company.prices[itemKey]} + ৳{fee} {t("floor charge", "ফ্লোর চার্জ")}) × {qty}
-          <div className="text-xl font-bold" style={{ color: "#1d4ed8" }}>{t("Total", "মোট")} ৳{total}</div>
+          ৳{company.prices[itemKey]} × {qty} + ৳{fee}{" "}
+          {t("floor charge", "ফ্লোর চার্জ")}
+
+          <div
+            className="text-xl font-bold"
+            style={{ color: "#1d4ed8" }}
+          >
+            {t("Total", "মোট")} ৳{total}
+          </div>
         </div>
 
-        {msg && <p className="text-sm font-medium" style={{ color: "#b91c1c" }}>{msg}</p>}
-        <button onClick={submit} className="btn w-full" style={{ padding: 14 }}>{t("Place Order", "অর্ডার নিশ্চিত করুন")}</button>
+        {msg && (
+          <p
+            className="text-sm font-medium"
+            style={{ color: "#b91c1c" }}
+          >
+            {msg}
+          </p>
+        )}
+
+        <button
+          onClick={submit}
+          disabled={loading}
+          className="btn w-full"
+          style={{ padding: 14, opacity: loading ? 0.6 : 1 }}
+        >
+          {loading
+            ? t("Placing order...", "অর্ডার করা হচ্ছে...")
+            : t("Place Order", "অর্ডার নিশ্চিত করুন")}
+        </button>
       </section>
     </div>
   );
 }
 
 export default function OrderPage() {
-  return <Guard role="student"><Inner /></Guard>;
+  return (
+    <Guard role="student">
+      <Inner />
+    </Guard>
+  );
 }

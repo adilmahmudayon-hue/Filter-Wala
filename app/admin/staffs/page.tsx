@@ -21,14 +21,19 @@ function Inner() {
   const doneCount = (id: string) => orders.filter((o) => o.status === "Completed" && o.completedBy === id).length;
   const compName = (id?: string) => companies.find((c) => c.id === id)?.name ?? "—";
 
-  const add = () => {
-    if (!f.name || !f.email || f.password.length < 6)
-      return setMsg(t("Name, email and a 6+ character password are required.", "নাম, ইমেইল ও ৬+ অক্ষরের পাসওয়ার্ড দরকার।"));
-    const e = signup({ role: "staff", ...f });
-    if (e) return setMsg(err(e));
-    setF({ ...f, name: "", email: "", phone: "", password: "" });
-    setMsg(""); setAdding(false); setTab("active");
-  };
+  const add = async () => {
+  if (!f.name || !f.email || f.password.length < 6)
+    return setMsg(t("Name, email and a 6+ character password are required.", "নাম, ইমেইল ও ৬+ অক্ষরের পাসওয়ার্ড দরকার।"));
+
+  const e = await signup({ role: "staff", ...f });
+
+  if (e) return setMsg(err(e));
+
+  setF({ ...f, name: "", email: "", phone: "", password: "" });
+  setMsg("");
+  setAdding(false);
+  setTab("active");
+};
 
   const reset = (email: string, id: string) => {
     updateUser(id, { password: "reset123" });

@@ -21,14 +21,20 @@ function Inner() {
     `${u.name} ${u.email} ${u.phone} ${u.studentId}`.toLowerCase().includes(q.toLowerCase()));
   const doneCount = (id: string) => orders.filter((o) => o.customerId === id && o.status === "Completed").length;
 
-  const add = () => {
-    if (!f.name || !f.email || !f.studentId || !f.building || f.password.length < 6)
-      return setMsg(t("Fill all fields (password 6+ characters).", "সব ঘর পূরণ করুন (পাসওয়ার্ড ৬+ অক্ষর)।"));
-    const e = signup({ role: "student", ...f });
-    if (e) return setMsg(err(e));
-    setF({ name: "", email: "", phone: "", password: "", studentId: "", building: "", area: "", floor: 0 });
-    setMsg(""); setAdding(false); setTab("active");
-  };
+ 
+  const add = async () => {
+  if (!f.name || !f.email || !f.studentId || !f.building || f.password.length < 6)
+    return setMsg(t("Fill all fields (password 6+ characters).", "সব ঘর পূরণ করুন (পাসওয়ার্ড ৬+ অক্ষর)।"));
+
+  const e = await signup({ role: "student", ...f });
+
+  if (e) return setMsg(err(e));
+
+  setF({ name: "", email: "", phone: "", password: "", studentId: "", building: "", area: "", floor: 0 });
+  setMsg("");
+  setAdding(false);
+  setTab("active");
+};
 
   const reset = (email: string, id: string) => {
     updateUser(id, { password: "reset123" });
